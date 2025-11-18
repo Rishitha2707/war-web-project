@@ -1,55 +1,62 @@
 pipeline {
     agent any
 
-    tools {
-        jdk 'JDK17'
-        maven 'Maven3'
-    }
-
     environment {
-        SONARQUBE_ENV = 'sonar'
-        SCANNER_HOME = '/opt/sonar-scanner'
+        MAVEN_HOME = "/opt/maven"
+        JAVA_HOME = "/opt/java/openjdk"
+        PATH = "$MAVEN_HOME/bin:$JAVA_HOME/bin:/opt/sonar-scanner/bin:$PATH"
+
+        SONARQUBE_URL = "http://13.201.65.221:9000"
+        SONARQUBE_TOKEN = "your-sonar-token"
+
+        NEXUS_URL = "http://54.219.194.156:8081"
+        NEXUS_REPO = "maven-releases"
+        NEXUS_GROUP = "com/webapp"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git branch: 'master',
-                    url: 'https://github.com/Rishitha2707/war-web-project.git'
+                git branch: 'master', url: 'https://github.com/Rishitha2707/war-web-project.git'
             }
         }
 
         stage('Build Artifact') {
             steps {
-                script {
-                    def MAVEN_HOME = tool 'Maven3'
-                    sh "${MAVEN_HOME}/bin/mvn clean package -DskipTests=false"
-                }
+                sh """
+                    echo '👉 Using Maven from: $MAVEN_HOME'
+                    mvn -v
+                    mvn clean package -DskipTests=false
+                """
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('sonar') {
-                    sh """
-                        ${SCANNER_HOME}/bin/sonar-scanner \
-                        -Dsonar.projectKey=warweb \
+                sh """
+                    sonar-scanner \
+                        -Dsonar.projectKey=webapp \
                         -Dsonar.sources=src \
-                        -Dsonar.java.binaries=target/classes \
-                        -Dsonar.host.url=$SONAR_HOST_URL \
-                        -Dsonar.token=$SONAR_AUTH_TOKEN
-                    """
-                }
+                        -Dsonar.java.binaries=target \
+                        -Dsonar.host.url=$SONARQUBE_URL \
+                        -Dsonar.login=$SONARQUBE_TOKEN
+                """
             }
         }
 
         stage('Upload Artifact to Nexus') {
             steps {
-                script {
-                    def MAVEN_HOME = tool 'Maven3'
-                    sh "${MAVEN_HOME}/bin/mvn deploy -DskipTests=true"
-                }
+                sh """
+                    mvn deploy:deploy-file \
+                        -Durl=$NEXUS_URL/repository/$NEXUS_REPO/ \
+                        -DrepositoryId=nexus \
+                        -DgroupId=$NEXUS_GROUP \
+                        -DartifactId=mywebapp \
+                        -Dversion=1.0 \
+                        -Dpackaging=war \
+                        -Dfile=target/*.war
+                """
             }
         }
 
@@ -58,14 +65,14 @@ pipeline {
                 sh """
                     curl -u admin:admin \
                     -T target/*.war \
-                    'http://54.219.194.156:8080/manager/text/deploy?path=/myapp&update=true'
+                    'http://13.201.65.221:8080/manager/text/deploy?path=/mywebapp&update=true'
                 """
             }
         }
     }
 
     post {
-        success { echo "✔ Pipeline succeeded" }
+        success { echo "✅ Pipeline completed successfully!" }
         failure { echo "❌ Pipeline failed" }
     }
 }
