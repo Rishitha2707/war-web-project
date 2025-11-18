@@ -3,7 +3,7 @@ pipeline {
     agent { label 'sonar' }
 
     environment {
-        SONARQUBE_SERVER = 'Sonar'
+        SONARQUBE_SERVER = 'any agent'
         MVN_SETTINGS = '/etc/maven/settings.xml'
 
         NEXUS_URL = 'http://18.144.48.161:8081'
