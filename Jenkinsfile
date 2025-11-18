@@ -1,78 +1,60 @@
 pipeline {
     agent any
 
+    tools {
+        jdk 'JDK17'
+        maven 'Maven3'
+    }
+
     environment {
-        MAVEN_HOME = "/opt/maven"
-        JAVA_HOME = "/opt/java/openjdk"
-        PATH = "$MAVEN_HOME/bin:$JAVA_HOME/bin:/opt/sonar-scanner/bin:$PATH"
-
-        SONARQUBE_URL = "http://13.201.65.221:9000"
-        SONARQUBE_TOKEN = "your-sonar-token"
-
-        NEXUS_URL = "http://54.219.194.156:8081"
-        NEXUS_REPO = "maven-releases"
-        NEXUS_GROUP = "com/webapp"
+        SONARQUBE_SERVER = 'sonar'
+        SONAR_URL = 'http://sonar-qube:9000'
+        MVN_SETTINGS = '/etc/maven/settings.xml'
+        NEXUS_URL = 'http://nexus:8081'
+        NEXUS_REPO = 'maven-releases'
     }
 
     stages {
-
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                git branch: 'master', url: 'https://github.com/Rishitha2707/war-web-project.git'
+                git branch: 'main',
+                    url: 'https://github.com/your/repo.git'
             }
         }
 
-        stage('Build Artifact') {
+        stage('Build') {
             steps {
-                sh """
-                    echo '👉 Using Maven from: $MAVEN_HOME'
-                    mvn -v
-                    mvn clean package -DskipTests=false
-                """
+                sh "mvn -s ${MVN_SETTINGS} clean install"
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                sh """
-                    sonar-scanner \
-                        -Dsonar.projectKey=webapp \
-                        -Dsonar.sources=src \
-                        -Dsonar.java.binaries=target \
-                        -Dsonar.host.url=$SONARQUBE_URL \
-                        -Dsonar.login=$SONARQUBE_TOKEN
-                """
+                withSonarQubeEnv('sonar') {
+                    sh "mvn sonar:sonar -Dsonar.projectKey=myproject -Dsonar.host.url=${SONAR_URL}"
+                }
             }
         }
 
-        stage('Upload Artifact to Nexus') {
+        stage('Quality Gate') {
+            steps {
+                waitForQualityGate abortPipeline: false
+            }
+        }
+
+        stage('Upload to Nexus') {
             steps {
                 sh """
-                    mvn deploy:deploy-file \
-                        -Durl=$NEXUS_URL/repository/$NEXUS_REPO/ \
-                        -DrepositoryId=nexus \
-                        -DgroupId=$NEXUS_GROUP \
-                        -DartifactId=mywebapp \
-                        -Dversion=1.0 \
-                        -Dpackaging=war \
-                        -Dfile=target/*.war
+                    mvn -s ${MVN_SETTINGS} deploy \
+                    -DaltDeploymentRepository=${NEXUS_REPO}::default::${NEXUS_URL}/repository/${NEXUS_REPO}/
                 """
             }
         }
 
         stage('Deploy to Tomcat') {
             steps {
-                sh """
-                    curl -u admin:admin \
-                    -T target/*.war \
-                    'http://13.201.65.221:8080/manager/text/deploy?path=/mywebapp&update=true'
-                """
+                sh "curl -u admin:admin -T target/*.war http://my-tomcat-app:8080/manager/text/deploy?path=/myapp"
             }
         }
-    }
-
-    post {
-        success { echo "✅ Pipeline completed successfully!" }
-        failure { echo "❌ Pipeline failed" }
     }
 }
