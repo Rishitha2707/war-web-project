@@ -1,5 +1,4 @@
 pipeline {
-
     agent any
 
     tools {
@@ -8,23 +7,19 @@ pipeline {
     }
 
     environment {
-        SONAR_SCANNER_HOME = tool 'SonarScanner'
+        SONARQUBE_ENV = 'sonar'   // Your sonar server name in Jenkins → manage → configure system
+        SCANNER_HOME = tool 'ManualScanner'
+        MVN_SETTINGS = '/etc/maven/settings.xml'
+        NEXUS_URL = 'http://54.219.194.156:8081'
+        NEXUS_REPO = 'maven-releases'
     }
 
     stages {
 
-        stage('Verify SonarScanner') {
-            steps {
-                sh """
-                    echo \"Scanner Path: ${SONAR_SCANNER_HOME}\"
-                    ${SONAR_SCANNER_HOME}/bin/sonar-scanner --version
-                """
-            }
-        }
-
         stage('Checkout Code') {
             steps {
-                checkout scm
+                git branch: 'master',
+                    url: 'https://github.com/Rishitha2707/war-web-project.git'
             }
         }
 
@@ -32,10 +27,13 @@ pipeline {
             steps {
                 withSonarQubeEnv('sonar') {
                     sh """
-                        ${SONAR_SCANNER_HOME}/bin/sonar-scanner \
-                            -Dsonar.projectKey=webapp \
-                            -Dsonar.sources=src \
-                            -Dsonar.java.binaries=target
+                        ${SCANNER_HOME}/bin/sonar-scanner \
+                        -Dsonar.projectKey=warweb \
+                        -Dsonar.projectName=warweb \
+                        -Dsonar.sources=src \
+                        -Dsonar.java.binaries=target/classes \
+                        -Dsonar.host.url=$SONAR_HOST_URL \
+                        -Dsonar.login=$SONAR_AUTH_TOKEN
                     """
                 }
             }
@@ -43,14 +41,32 @@ pipeline {
 
         stage('Build Artifact') {
             steps {
-                sh 'mvn clean package -DskipTests'
+                sh "mvn clean package -s ${MVN_SETTINGS}"
             }
         }
 
+        stage('Upload Artifact to Nexus') {
+            steps {
+                sh """
+                    mvn deploy -s ${MVN_SETTINGS} \
+                    -DskipTests=true
+                """
+            }
+        }
+
+        stage('Deploy to Tomcat') {
+            steps {
+                sh """
+                    curl -u admin:admin \
+                    -T target/*.war \
+                    'http://54.219.194.156:8080/manager/text/deploy?path=/myapp&update=true'
+                """
+            }
+        }
     }
 
     post {
+        success { echo "✔️ Pipeline succeeded" }
         failure { echo "❌ Pipeline failed" }
-        success { echo "✅ Success" }
     }
 }
