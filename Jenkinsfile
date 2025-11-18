@@ -1,86 +1,117 @@
 pipeline {
-    agent any
+
+    agent { label 'sonar' }
 
     environment {
-        SONAR_HOST_URL = "http://18.144.48.161:9000"        // SonarQube URL
-        SONAR_TOKEN = "squ_7a590a551faef596626d67a010a71076d78e5429" // Sonar token
-        NEXUS_REPO = "maven-releases"                      // Nexus repository name
-        NEXUS_URL = "http://18.144.48.161:8081"           // Nexus base URL
-        NEXUS_GROUP = "com/web"                            // Maven groupId
-        NEXUS_CRED = "nexus-user"                          // Jenkins credentials ID for Nexus
-        IMAGE_NAME = "my-tomcat-app"                       // Docker image name
+        SONARQUBE_SERVER = 'Sonar'
+        MVN_SETTINGS = '/etc/maven/settings.xml'
+
+        NEXUS_URL = 'http://18.144.48.161:8081'
+        NEXUS_REPO = 'maven-releases'
+        NEXUS_GROUP = 'com/web/cal'
+        NEXUS_ARTIFACT = 'webapp-add'
+
+        TOMCAT_URL = 'http://18.144.48.161:8080/manager/text'
     }
 
     stages {
 
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
-                git 'https://github.com/Rishitha2707/war-web-project.git'
+                echo '📦 Cloning source from GitHub...'
+                checkout([$class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    userRemoteConfigs: [[url: 'https://github.com/Rishitha2707/war-web-project.git']]
+                ])
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                sh """
-                docker run --rm \
-                  -e SONAR_HOST_URL="${SONAR_HOST_URL}" \
-                  -e SONAR_LOGIN="${SONAR_TOKEN}" \
-                  -v ${WORKSPACE}:/usr/src \
-                  sonarsource/sonar-scanner-cli
-                """
-            }
-        }
-
-        stage('Build WAR with Maven') {
-            steps {
-                sh """
-                docker run --rm \
-                  -v ${WORKSPACE}:/usr/src/mymaven \
-                  -w /usr/src/mymaven \
-                  maven:3.5.2-jdk-8 mvn clean package
-                """
-            }
-        }
-
-        stage('Upload WAR to Nexus') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: "${NEXUS_CRED}", usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                echo '🔍 Running SonarQube static analysis...'
+                withSonarQubeEnv("${SONARQUBE_SERVER}") {
                     sh """
-                    curl -v -u ${NEXUS_USER}:${NEXUS_PASS} \
-                    --upload-file target/*.war \
-                    ${NEXUS_URL}/repository/${NEXUS_REPO}/${NEXUS_GROUP}/app/1.0/app-1.0.war
+                        mvn clean verify sonar:sonar -DskipTests --settings ${MVN_SETTINGS}
                     """
                 }
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build Artifact') {
             steps {
+                echo '⚙️ Building WAR...'
                 sh """
-                docker build -t ${IMAGE_NAME}:latest .
+                    mvn clean package -DskipTests --settings ${MVN_SETTINGS}
+                    ls -lh target/*.war || true
                 """
             }
         }
 
-        stage('Run Tomcat Container') {
+        stage('Upload Artifact to Nexus') {
             steps {
-                sh """
-                docker rm -f tomcat-app || true
-                docker run -d --name tomcat-app -p 8080:8080 ${IMAGE_NAME}:latest
-                """
+                withCredentials([usernamePassword(credentialsId: 'nexus', usernameVariable: 'NEXUS_USR', passwordVariable: 'NEXUS_PSW')]) {
+
+                    sh """
+                        WAR_FILE=\$(ls target/*.war | head -1)
+                        VERSION="0.0.\${BUILD_NUMBER}"
+
+                        echo "📤 Uploading WAR: \$WAR_FILE"
+                        echo "📦 Version: \$VERSION"
+
+                        curl -v -u \${NEXUS_USR}:\${NEXUS_PSW} --upload-file "\$WAR_FILE" \
+                        "\${NEXUS_URL}/repository/\${NEXUS_REPO}/\${NEXUS_GROUP}/\${NEXUS_ARTIFACT}/\${VERSION}/\${NEXUS_ARTIFACT}-\${VERSION}.war"
+
+                        echo "✅ Artifact uploaded to Nexus successfully!"
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to Tomcat') {
+            agent { label 'tomcat' }
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'nexus', usernameVariable: 'NEXUS_USR', passwordVariable: 'NEXUS_PSW'),
+                    usernamePassword(credentialsId: 'tomcat', usernameVariable: 'TOMCAT_USR', passwordVariable: 'TOMCAT_PSW')
+                ]) {
+
+                    sh """
+                        cd /tmp
+                        rm -f *.war
+
+                        echo "🔍 Fetching latest WAR from Nexus..."
+
+                        DOWNLOAD_URL=\$(curl -s -u \${NEXUS_USR}:\${NEXUS_PSW} \
+                            "\${NEXUS_URL}/service/rest/v1/search?repository=\${NEXUS_REPO}&group=${NEXUS_GROUP}&name=${NEXUS_ARTIFACT}" \
+                            | grep -oP '"downloadUrl":\\s*"\\K[^"]+\\.war' | tail -1)
+
+                        if [[ -z "\$DOWNLOAD_URL" ]]; then
+                            echo "❌ No WAR found in Nexus!"
+                            exit 1
+                        fi
+
+                        echo "⬇️ Downloading WAR: \$DOWNLOAD_URL"
+                        curl -u \${NEXUS_USR}:\${NEXUS_PSW} -O "\$DOWNLOAD_URL"
+
+                        WAR_FILE=\$(basename "\$DOWNLOAD_URL")
+                        APP_NAME=\$(echo "\$WAR_FILE" | sed 's/-[0-9].*//')
+
+                        echo "🧹 Removing old deployment from Tomcat..."
+                        curl -u \${TOMCAT_USR}:\${TOMCAT_PSW} "\${TOMCAT_URL}/undeploy?path=/\${APP_NAME}" || true
+
+                        echo "🚀 Deploying new WAR to Tomcat..."
+                        curl -u \${TOMCAT_USR}:\${TOMCAT_PSW} --upload-file "\$WAR_FILE" \
+                            "\${TOMCAT_URL}/deploy?path=/\${APP_NAME}&update=true"
+
+                        echo "✅ Deployment successful!"
+                    """
+                }
             }
         }
     }
 
     post {
-        always {
-            echo "Pipeline finished."
-        }
-        failure {
-            echo "Pipeline failed!"
-        }
-        success {
-            echo "Pipeline succeeded!"
-        }
+        success { echo '🎉 Pipeline completed successfully — Application live on Tomcat!' }
+        failure { echo '❌ Pipeline failed — Check Jenkins logs.' }
     }
 }
