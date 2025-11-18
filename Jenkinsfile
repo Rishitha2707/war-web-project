@@ -23,11 +23,9 @@ pipeline {
         stage('Build Artifact') {
             steps {
                 script {
-                    MAVEN_HOME = tool 'Maven3'
+                    def MAVEN_HOME = tool 'Maven3'
+                    sh "${MAVEN_HOME}/bin/mvn clean package -DskipTests=false"
                 }
-                sh """
-                    ${MAVEN_HOME}/bin/mvn clean package -DskipTests=false
-                """
             }
         }
 
@@ -49,19 +47,17 @@ pipeline {
         stage('Upload Artifact to Nexus') {
             steps {
                 script {
-                    MAVEN_HOME = tool 'Maven3'
+                    def MAVEN_HOME = tool 'Maven3'
+                    sh "${MAVEN_HOME}/bin/mvn deploy -DskipTests=true"
                 }
-                sh """
-                    ${MAVEN_HOME}/bin/mvn deploy -DskipTests=true
-                """
             }
         }
 
         stage('Deploy to Tomcat') {
             steps {
                 sh """
-                    curl -u admin:admin \\
-                    -T target/*.war \\
+                    curl -u admin:admin \
+                    -T target/*.war \
                     'http://54.219.194.156:8080/manager/text/deploy?path=/myapp&update=true'
                 """
             }
