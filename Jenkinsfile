@@ -2,10 +2,10 @@ pipeline {
     agent any
 
     environment {
-        SONAR_HOST_URL = "http://3.101.111.226:9000"        // SonarQube URL
+        SONAR_HOST_URL = "http://18.144.48.161:9000"        // SonarQube URL
         SONAR_TOKEN = "squ_7a590a551faef596626d67a010a71076d78e5429" // Sonar token
         NEXUS_REPO = "maven-releases"                      // Nexus repository name
-        NEXUS_URL = "http://3.101.111.226:8081"           // Nexus base URL
+        NEXUS_URL = "http://18.144.48.161:8081"           // Nexus base URL
         NEXUS_GROUP = "com/web"                            // Maven groupId
         NEXUS_CRED = "nexus-user"                          // Jenkins credentials ID for Nexus
         IMAGE_NAME = "my-tomcat-app"                       // Docker image name
