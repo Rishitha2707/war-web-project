@@ -9,7 +9,6 @@ pipeline {
     environment {
         SONARQUBE_ENV = 'sonar'
         SCANNER_HOME = '/opt/sonar-scanner'
-        MVN_SETTINGS = '/etc/maven/settings.xml'
     }
 
     stages {
@@ -23,7 +22,12 @@ pipeline {
 
         stage('Build Artifact') {
             steps {
-                sh "mvn clean package -DskipTests=false"
+                script {
+                    MAVEN_HOME = tool 'Maven3'
+                }
+                sh """
+                    ${MAVEN_HOME}/bin/mvn clean package -DskipTests=false
+                """
             }
         }
 
@@ -33,7 +37,6 @@ pipeline {
                     sh """
                         ${SCANNER_HOME}/bin/sonar-scanner \
                         -Dsonar.projectKey=warweb \
-                        -Dsonar.projectName=warweb \
                         -Dsonar.sources=src \
                         -Dsonar.java.binaries=target/classes \
                         -Dsonar.host.url=$SONAR_HOST_URL \
@@ -45,15 +48,20 @@ pipeline {
 
         stage('Upload Artifact to Nexus') {
             steps {
-                sh "mvn deploy -DskipTests=true"
+                script {
+                    MAVEN_HOME = tool 'Maven3'
+                }
+                sh """
+                    ${MAVEN_HOME}/bin/mvn deploy -DskipTests=true
+                """
             }
         }
 
         stage('Deploy to Tomcat') {
             steps {
                 sh """
-                    curl -u admin:admin \
-                    -T target/*.war \
+                    curl -u admin:admin \\
+                    -T target/*.war \\
                     'http://54.219.194.156:8080/manager/text/deploy?path=/myapp&update=true'
                 """
             }
@@ -61,7 +69,7 @@ pipeline {
     }
 
     post {
-        success { echo "✔️ Pipeline succeeded" }
+        success { echo "✔ Pipeline succeeded" }
         failure { echo "❌ Pipeline failed" }
     }
 }
