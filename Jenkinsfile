@@ -20,7 +20,7 @@ pipeline {
             steps {
                 echo '📦 Cloning source from GitHub...'
                 checkout([$class: 'GitSCM',
-                    branches: [[name: '*/main']],
+                    branches: [[name: '*/master']],
                     userRemoteConfigs: [[url: 'https://github.com/Rishitha2707/war-web-project.git']]
                 ])
             }
