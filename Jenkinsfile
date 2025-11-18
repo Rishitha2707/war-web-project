@@ -7,11 +7,9 @@ pipeline {
     }
 
     environment {
-        SONARQUBE_ENV = 'sonar'   // Your sonar server name in Jenkins → manage → configure system
-        SCANNER_HOME = tool 'ManualScanner'
+        SONARQUBE_ENV = 'sonar'
+        SCANNER_HOME = '/opt/sonar-scanner'
         MVN_SETTINGS = '/etc/maven/settings.xml'
-        NEXUS_URL = 'http://54.219.194.156:8081'
-        NEXUS_REPO = 'maven-releases'
     }
 
     stages {
@@ -20,6 +18,12 @@ pipeline {
             steps {
                 git branch: 'master',
                     url: 'https://github.com/Rishitha2707/war-web-project.git'
+            }
+        }
+
+        stage('Build Artifact') {
+            steps {
+                sh "mvn clean package -DskipTests=false"
             }
         }
 
@@ -33,24 +37,15 @@ pipeline {
                         -Dsonar.sources=src \
                         -Dsonar.java.binaries=target/classes \
                         -Dsonar.host.url=$SONAR_HOST_URL \
-                        -Dsonar.login=$SONAR_AUTH_TOKEN
+                        -Dsonar.token=$SONAR_AUTH_TOKEN
                     """
                 }
             }
         }
 
-        stage('Build Artifact') {
-            steps {
-                sh "mvn clean package -s ${MVN_SETTINGS}"
-            }
-        }
-
         stage('Upload Artifact to Nexus') {
             steps {
-                sh """
-                    mvn deploy -s ${MVN_SETTINGS} \
-                    -DskipTests=true
-                """
+                sh "mvn deploy -DskipTests=true"
             }
         }
 
