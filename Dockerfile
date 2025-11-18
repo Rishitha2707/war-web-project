@@ -16,3 +16,11 @@ RUN ARTIFACT_URL="${NEXUS_URL}${GROUP_ID_PATH}/${APP_NAME}/${VERSION}/${APP_NAME
     echo "Downloading WAR from: ${ARTIFACT_URL}" && \
     curl -u "${NEXUS_USER}:${NEXUS_PASS}" -L "${ARTIFACT_URL}" -o /tmp/app.war
  
+# -------- Stage 2: Tomcat --------
+FROM tomcat:10.1-jdk17-temurin
+ 
+# Remove the default ROOT app
+RUN rm -rf /usr/local/tomcat/webapps/ROOT
+ 
+# Copy the downloaded war as ROOT.war for auto-deploy
+COPY --from=downloader /tmp/app.war /usr/local/tomcat/webapps/ROOT.war
