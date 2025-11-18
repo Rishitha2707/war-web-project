@@ -7,8 +7,6 @@ pipeline {
     }
 
     environment {
-        SONARQUBE = 'sonar'
-        SCANNER = 'Sonar-Scanner'
         NEXUS_URL = 'http://54.219.194.156:8081'
         NEXUS_REPO = 'maven-releases'
         NEXUS_GROUP = 'com/webapp'
@@ -27,12 +25,15 @@ pipeline {
             steps {
                 echo "🔍 Running SonarQube static analysis..."
                 withSonarQubeEnv('sonar') {
-                    sh """
-                        ${SCANNER}/bin/sonar-scanner \
-                        -Dsonar.projectKey=webapp \
-                        -Dsonar.sources=src \
-                        -Dsonar.java.binaries=target
-                    """
+                    script {
+                        def scannerHome = tool 'Sonar-Scanner'
+                        sh """
+                            ${scannerHome}/bin/sonar-scanner \
+                            -Dsonar.projectKey=webapp \
+                            -Dsonar.sources=src \
+                            -Dsonar.java.binaries=target
+                        """
+                    }
                 }
             }
         }
@@ -67,6 +68,9 @@ pipeline {
     post {
         failure {
             echo "❌ Pipeline failed — Check Jenkins logs."
+        }
+        success {
+            echo "✅ Pipeline success!"
         }
     }
 }
