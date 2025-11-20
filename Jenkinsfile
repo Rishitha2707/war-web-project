@@ -22,20 +22,20 @@ pipeline {
         DOCKERHUB_PASS = "dckr_pat_o1ajuSqVuSp-p_qW5xwvF8GDcp0"
         IMAGE_NAME = "tomcat-wwp"
         IMAGE_VERSION = "1.0.1"
-
-        MVN_SETTINGS = "/etc/maven/settings.xml"
     }
 
     stages {
 
         /* -----------------------------
-         * SETUP MAVEN settings.xml
+         * SETUP MAVEN settings.xml (in workspace, no sudo)
          * ----------------------------- */
         stage("Setup Maven Settings") {
             steps {
-                sh """
-                sudo mkdir -p /etc/maven
-                sudo bash -c 'cat > /etc/maven/settings.xml <<EOF
+                script {
+                    sh '''
+                      mkdir -p "$WORKSPACE/.m2"
+
+                      cat > "$WORKSPACE/.m2/settings.xml" <<EOF
 <settings>
   <servers>
     <server>
@@ -45,8 +45,9 @@ pipeline {
     </server>
   </servers>
 </settings>
-EOF'
-                """
+EOF
+                    '''
+                }
             }
         }
 
@@ -86,12 +87,12 @@ EOF'
         }
 
         /* -----------------------------
-         * UPLOAD WAR TO NEXUS
+         * UPLOAD WAR TO NEXUS (uses workspace settings.xml)
          * ----------------------------- */
         stage('Upload to Nexus') {
             steps {
                 sh """
-                mvn -s ${MVN_SETTINGS} deploy:deploy-file \
+                mvn -s "$WORKSPACE/.m2/settings.xml" deploy:deploy-file \
                   -Durl=${NEXUS_URL}/repository/${NEXUS_REPO}/ \
                   -DrepositoryId=nexus \
                   -DgroupId=${NEXUS_GROUP} \
@@ -122,13 +123,11 @@ EOF'
         stage('Build & Push Docker Image') {
             steps {
                 script {
-
-                    writeFile file: 'Dockerfile', text: """
-                    FROM tomcat:9-jdk17
-                    RUN rm -rf /usr/local/tomcat/webapps/*
-                    COPY target/wwp-1.0.1.war /usr/local/tomcat/webapps/wwp.war
-                    """
-
+                    writeFile file: 'Dockerfile', text: '''
+FROM tomcat:9-jdk17
+RUN rm -rf /usr/local/tomcat/webapps/*
+COPY target/wwp-1.0.1.war /usr/local/tomcat/webapps/wwp.war
+'''
                     sh "docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_VERSION} ."
 
                     sh """
