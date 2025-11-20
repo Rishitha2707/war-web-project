@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    options {
+        skipDefaultCheckout(true)
+    }
+
     tools {
         jdk 'JDK17'
         maven 'Maven3'
@@ -20,7 +24,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git branch: 'main',
+                git branch: 'master',
                     url: 'https://github.com/Rishitha2707/war-web-project.git'
             }
         }
@@ -50,18 +54,18 @@ pipeline {
 
         stage('Docker Build') {
             steps {
-                script {
-                    sh "docker build -t ${IMAGE_NAME}:latest ."
-                }
+                sh "docker build -t ${IMAGE_NAME}:latest ."
             }
         }
 
         stage('Docker Push') {
             steps {
                 script {
-                    withCredentials([usernamePassword(credentialsId: DOCKERHUB_CREDENTIALS, 
-                                                     usernameVariable: 'USER', 
-                                                     passwordVariable: 'PASS')]) {
+                    withCredentials([
+                        usernamePassword(credentialsId: DOCKERHUB_CREDENTIALS,
+                                         usernameVariable: 'USER',
+                                         passwordVariable: 'PASS')
+                    ]) {
                         sh """
                             echo $PASS | docker login -u $USER --password-stdin
                             docker tag ${IMAGE_NAME}:latest $USER/${IMAGE_NAME}:latest
@@ -71,6 +75,5 @@ pipeline {
                 }
             }
         }
-
     }
 }
