@@ -7,11 +7,13 @@ pipeline {
     }
 
     environment {
+
         SONAR_HOST_URL = "http://54.153.103.78:9000"
         SONAR_TOKEN = "squ_9615680f597c6da567dd69cd90212315f0583955"
 
         NEXUS_URL = "http://54.153.103.78:8081"
         NEXUS_REPO = "maven-releases"
+        NEXUS_GROUP = "com.webapp"   // FIXED AND PRESENT
 
         TOMCAT_HOST = "http://54.153.103.78:9090"
         TOMCAT_USER = "admin"
@@ -25,9 +27,6 @@ pipeline {
 
     stages {
 
-        /* -----------------------------
-         * CHECKOUT
-         * ----------------------------- */
         stage('Checkout') {
             steps {
                 git branch: 'master',
@@ -35,18 +34,12 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-         * MAVEN BUILD
-         * ----------------------------- */
         stage('Build') {
             steps {
                 sh "mvn clean package"
             }
         }
 
-        /* -----------------------------
-         * SONAR ANALYSIS USING MAVEN
-         * ----------------------------- */
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('Sonar') {
@@ -60,9 +53,8 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-         * UPLOAD WAR TO NEXUS
-         * ----------------------------- */
+        /* Removed Quality Gate stage */
+
         stage('Upload to Nexus') {
             steps {
                 sh """
@@ -78,9 +70,6 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-         * DEPLOY TO TOMCAT
-         * ----------------------------- */
         stage('Deploy to Tomcat') {
             steps {
                 sh """
@@ -91,23 +80,17 @@ pipeline {
             }
         }
 
-        /* ----------------------------------------------
-         * BUILD CUSTOM TOMCAT IMAGE & PUSH TO DOCKER HUB
-         * ---------------------------------------------- */
         stage('Build & Push Docker Image') {
             steps {
                 script {
-                    // Create Dockerfile dynamically
                     writeFile file: 'Dockerfile', text: """
                     FROM tomcat:9-jdk17
                     RUN rm -rf /usr/local/tomcat/webapps/*
                     COPY target/wwp-1.0.1.war /usr/local/tomcat/webapps/wwp.war
                     """
 
-                    // Build Docker image
                     sh "docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_VERSION} ."
 
-                    // Login and push to DockerHub
                     sh """
                     echo "${DOCKERHUB_PASS}" | docker login -u "${DOCKERHUB_USER}" --password-stdin
                     docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_VERSION}
@@ -118,9 +101,6 @@ pipeline {
         }
     }
 
-    /* -----------------------------
-     * POST ACTIONS
-     * ----------------------------- */
     post {
         always {
             echo "Pipeline completed"
