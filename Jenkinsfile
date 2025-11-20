@@ -1,23 +1,28 @@
 pipeline {
     agent any
 
-    options {
-        skipDefaultCheckout(true)
-    }
-
     tools {
         jdk 'JDK17'
         maven 'Maven3'
     }
 
     environment {
-        SONARQUBE_SERVER = 'sonar'
-        MVN_SETTINGS = '/etc/maven/settings.xml'
-        NEXUS_URL = "http://54.153.103.63:8081"
+
+        SONAR_HOST_URL = "http://54.153.103.78:9000"
+        SONAR_TOKEN = "squ_9615680f597c6da567dd69cd90212315f0583955"
+
+        NEXUS_URL = "http://54.153.103.78:8081"
         NEXUS_REPO = "maven-releases"
-        NEXUS_GROUP = "com.webapp"
-        DOCKERHUB_CREDENTIALS = 'dockerhub-cred'
-        IMAGE_NAME = "war-web-app"
+        NEXUS_GROUP = "com.webapp"   // FIXED AND PRESENT
+
+        TOMCAT_HOST = "http://54.153.103.78:9090"
+        TOMCAT_USER = "admin"
+        TOMCAT_PASS = "admin"
+
+        DOCKERHUB_USER = "rishi01dadireddy"
+        DOCKERHUB_PASS = "dckr_pat_o1ajuSqVuSp-p_qW5xwvF8GDcp0"
+        IMAGE_NAME = "tomcat-wwp"
+        IMAGE_VERSION = "1.0.1"
     }
 
     stages {
@@ -29,51 +34,82 @@ pipeline {
             }
         }
 
-        stage('Build with Maven') {
+        stage('Build') {
             steps {
-                sh "mvn clean package -s ${MVN_SETTINGS}"
+                sh "mvn clean package"
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv(SONARQUBE_SERVER) {
-                    sh "mvn sonar:sonar"
+                withSonarQubeEnv('Sonar') {
+                    sh """
+                    mvn sonar:sonar \
+                      -Dsonar.projectKey=webapp \
+                      -Dsonar.host.url=${SONAR_HOST_URL} \
+                      -Dsonar.login=${SONAR_TOKEN}
+                    """
                 }
             }
         }
 
-        stage('Nexus Upload') {
+        /* Removed Quality Gate stage */
+
+        stage('Upload to Nexus') {
             steps {
                 sh """
-                    mvn deploy -DaltDeploymentRepository=${NEXUS_REPO}::default::${NEXUS_URL}/repository/${NEXUS_REPO} \
-                    -s ${MVN_SETTINGS}
+                mvn deploy:deploy-file \
+                  -Durl=${NEXUS_URL}/repository/${NEXUS_REPO}/ \
+                  -DrepositoryId=nexus \
+                  -DgroupId=${NEXUS_GROUP} \
+                  -DartifactId=wwp \
+                  -Dversion=1.0.1 \
+                  -Dpackaging=war \
+                  -Dfile=target/wwp-1.0.1.war
                 """
             }
         }
 
-        stage('Docker Build') {
+        stage('Deploy to Tomcat') {
             steps {
-                sh "docker build -t ${IMAGE_NAME}:latest ."
+                sh """
+                curl -u ${TOMCAT_USER}:${TOMCAT_PASS} \
+                  -T target/wwp-1.0.1.war \
+                  "${TOMCAT_HOST}/manager/text/deploy?path=/wwp&update=true"
+                """
             }
         }
 
-        stage('Docker Push') {
+        stage('Build & Push Docker Image') {
             steps {
                 script {
-                    withCredentials([
-                        usernamePassword(credentialsId: DOCKERHUB_CREDENTIALS,
-                                         usernameVariable: 'USER',
-                                         passwordVariable: 'PASS')
-                    ]) {
-                        sh """
-                            echo $PASS | docker login -u $USER --password-stdin
-                            docker tag ${IMAGE_NAME}:latest $USER/${IMAGE_NAME}:latest
-                            docker push $USER/${IMAGE_NAME}:latest
-                        """
-                    }
+                    writeFile file: 'Dockerfile', text: """
+                    FROM tomcat:9-jdk17
+                    RUN rm -rf /usr/local/tomcat/webapps/*
+                    COPY target/wwp-1.0.1.war /usr/local/tomcat/webapps/wwp.war
+                    """
+
+                    sh "docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_VERSION} ."
+
+                    sh """
+                    echo "${DOCKERHUB_PASS}" | docker login -u "${DOCKERHUB_USER}" --password-stdin
+                    docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_VERSION}
+                    docker logout
+                    """
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            echo "Pipeline completed"
+        }
+        success {
+            echo "✔ Deployment Successful!"
+        }
+        failure {
+            echo "❌ Pipeline failed"
         }
     }
 }
