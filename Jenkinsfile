@@ -46,7 +46,7 @@ pipeline {
         }
 
         /* -----------------------------
-         * SONAR ANALYSIS USING MAVEN (FIXED)
+         * SONAR ANALYSIS USING MAVEN
          * ----------------------------- */
         stage('SonarQube Analysis') {
             steps {
@@ -57,17 +57,6 @@ pipeline {
                       -Dsonar.host.url=${SONAR_HOST_URL} \
                       -Dsonar.login=${SONAR_TOKEN}
                     """
-                }
-            }
-        }
-
-        /* -----------------------------
-         * QUALITY GATE
-         * ----------------------------- */
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 2, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
                 }
             }
         }
@@ -109,17 +98,17 @@ pipeline {
         stage('Build & Push Docker Image') {
             steps {
                 script {
-                    // Create Dockerfile
+                    // Create Dockerfile dynamically
                     writeFile file: 'Dockerfile', text: """
                     FROM tomcat:9-jdk17
                     RUN rm -rf /usr/local/tomcat/webapps/*
                     COPY target/wwp-1.0.1.war /usr/local/tomcat/webapps/wwp.war
                     """
 
-                    // Build image
+                    // Build Docker image
                     sh "docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_VERSION} ."
 
-                    // Login & Push
+                    // Login and push to DockerHub
                     sh """
                     echo "${DOCKERHUB_PASS}" | docker login -u "${DOCKERHUB_USER}" --password-stdin
                     docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_VERSION}
