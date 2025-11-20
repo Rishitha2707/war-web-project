@@ -7,21 +7,25 @@ pipeline {
     }
 
     environment {
-        SONAR_HOST_URL = "http://sonar-qube:9000"
-        SONAR_TOKEN = "your-sonar-token"
-        NEXUS_URL = "http://nexus:8081"
+        SONAR_HOST_URL = "http://54.153.103.78:9000"
+        SONAR_TOKEN = "squ_9615680f597c6da567dd69cd90212315f0583955"
+
+        NEXUS_URL = "http://54.153.103.78:8081"
         NEXUS_REPO = "maven-releases"
         NEXUS_GROUP = "com/webapp"
-        TOMCAT_HOST = "http://my-tomcat-app:8080"
+
+        TOMCAT_HOST = "http://54.153.103.78:9090"
         TOMCAT_USER = "admin"
         TOMCAT_PASS = "admin"
+
+        DOCKERHUB_USER = "rishi01dadireddy"
+        DOCKERHUB_PASS = "dckr_pat_o1ajuSqVuSp-p_qW5xwvF8GDcp0"
+        IMAGE_NAME = "tomcat-wwp"
+        IMAGE_VERSION = "1.0.1"
     }
 
     stages {
 
-        /* -----------------------------------
-         * CHECKOUT FROM YOUR REAL GITHUB REPO
-         * ----------------------------------- */
         stage('Checkout') {
             steps {
                 git branch: 'master',
@@ -29,21 +33,15 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-         * BUILD WAR USING MAVEN
-         * ----------------------------- */
         stage('Build') {
             steps {
                 sh "mvn clean package"
             }
         }
 
-        /* -----------------------------
-         * SONARQUBE CODE ANALYSIS
-         * ----------------------------- */
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('sonar') {
+                withSonarQubeEnv('Sonar') {
                     sh """
                     sonar-scanner \
                       -Dsonar.projectKey=webapp \
@@ -56,9 +54,6 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-         * QUALITY GATE CHECK
-         * ----------------------------- */
         stage('Quality Gate') {
             steps {
                 timeout(time: 2, unit: 'MINUTES') {
@@ -67,9 +62,6 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-         * UPLOAD ARTIFACT TO NEXUS
-         * ----------------------------- */
         stage('Upload to Nexus') {
             steps {
                 sh """
@@ -85,9 +77,6 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-         * DEPLOY WAR TO TOMCAT
-         * ----------------------------- */
         stage('Deploy to Tomcat') {
             steps {
                 sh """
@@ -97,11 +86,31 @@ pipeline {
                 """
             }
         }
+
+        /* -----------------------------------------
+         * NEW STAGE: BUILD & PUSH CUSTOM TOMCAT IMAGE
+         * ----------------------------------------- */
+        stage('Build & Push Docker Image') {
+            steps {
+                script {
+                    writeFile file: 'Dockerfile', text: """
+                    FROM tomcat:9-jdk17
+                    RUN rm -rf /usr/local/tomcat/webapps/*
+                    COPY target/wwp-1.0.1.war /usr/local/tomcat/webapps/wwp.war
+                    """
+
+                    sh "docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_VERSION} ."
+
+                    sh """
+                    echo "${DOCKERHUB_PASS}" | docker login -u "${DOCKERHUB_USER}" --password-stdin
+                    docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_VERSION}
+                    docker logout
+                    """
+                }
+            }
+        }
     }
 
-    /* -----------------------------
-     * POST ACTIONS
-     * ----------------------------- */
     post {
         always {
             echo "Pipeline completed"
