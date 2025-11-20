@@ -12,7 +12,6 @@ pipeline {
 
         NEXUS_URL = "http://54.153.103.78:8081"
         NEXUS_REPO = "maven-releases"
-        NEXUS_GROUP = "com/webapp"
 
         TOMCAT_HOST = "http://54.153.103.78:9090"
         TOMCAT_USER = "admin"
